@@ -87,7 +87,6 @@ local function loadChatHistory()
     local file = io.open(addon.path:append('\\chat_history.txt'), 'r');
     if file then
         for line in file:lines() do
-            -- Check if the line contains the expected format
             if line:find('|') then
                 local parts = line:split('|');
                 local timestamp = parts[1]:trim();
@@ -108,11 +107,26 @@ local function loadChatHistory()
                 elseif msgType == 14 then color = {0.0, 0.0, 0.5, 1.0}; -- Dark Blue (System)
                 end
 
-                local fullMsg = string.format("%s | %d | %s: %s", timestamp, msgType, character, msg);
-                chat.messages:append({message = fullMsg, color = color, type = character, isHistorical = true}); -- Use character as type and mark as historical
-                chat.message_ids[fullMsg .. msgType] = true; -- Mark this message as seen
+                local chatType = "Unknown";
+                -- Determine the chat type based on msgType
+                if msgType == 4 then chatType = "Party"; 
+                elseif msgType == 3 then chatType = "Tell"; 
+                elseif msgType == 5 then chatType = "LS1"; 
+                elseif msgType == 27 then chatType = "LS2"; 
+                elseif msgType == 26 then chatType = "Yell"; 
+                elseif msgType == 0 then chatType = "Say"; 
+                elseif msgType == 1 then chatType = "Shout"; 
+                elseif msgType == 8 then chatType = "Emote"; 
+                elseif msgType == 14 then chatType = "System"; 
+                end
+
+                -- Check if the message type is active in the current filter states
+                if chat.filterStates[chatType] == 0 then
+                    local fullMsg = string.format("%s | %d | %s: %s", timestamp, msgType, character, msg);
+                    chat.messages:append({message = fullMsg, color = color, type = chatType, isHistorical = true});
+                    chat.message_ids[fullMsg .. msgType] = true; -- Mark this message as seen
+                end
             else
-                -- Log an error or handle the unexpected format if necessary
                 print("Warning: Line skipped due to unexpected format: " .. line)
             end
         end
@@ -156,9 +170,9 @@ local function clean_str(str)
     return (str:gsub(string.char(0x07), '\n'));
 end
 
-------------------------------
+---------------------------
 -- Check for slash commands --
-------------------------------
+---------------------------
 ashita.events.register('command', 'command_cb', function (e)
     local args = e.command:args();
     if (#args == 0 or not args[1]:any('/xichats')) then
@@ -172,6 +186,28 @@ ashita.events.register('command', 'command_cb', function (e)
         AshitaCore:GetChatManager():QueueCommand(1, '/echo Debug output has been ' .. status);
     elseif args[2] == "toggle" then
         chat.is_open[1] = not chat.is_open[1];
+    elseif args[2] == "show" then
+        chat.is_open[1] = true;
+    elseif args[2] == "hide" then
+        chat.is_open[1] = false;
+    elseif args[2] == "archive" then
+        local timestamp = os.date('%Y-%m-%d_%H-%M-%S')
+        local current_log_path = addon.path:append('\\chat_history.txt')
+        local archived_log_path = addon.path:append('\\chatlog-' .. timestamp .. '.txt')
+
+        -- Rename current log file with timestamp
+        os.rename(current_log_path, archived_log_path)
+
+        -- Create a new chat history file
+        local new_log_file = io.open(current_log_path, 'w')
+        if new_log_file then
+            new_log_file:close()
+            chat.messages:clear() -- Clear chat messages after archiving
+            addAddonLoadedMessage() -- Add message that addon loaded to new log file
+            AshitaCore:GetChatManager():QueueCommand(1, '/echo Chat log archived successfully.')
+        else
+            AshitaCore:GetChatManager():QueueCommand(1, '/echo Error archiving chat log.')
+        end
     end
 end);
 
@@ -276,13 +312,13 @@ ashita.events.register('packet_out', 'outgoing_packet', function (e)
             color = {1.0, 0.3, 0.3, 1.0}; -- Lighter Red for Yell
         elseif msgType == 0 then
             chatType = "Say";
-            color = {1.0, 0.6, 0.6, 1.0}; -- Lighter Red for Say
+            color = {1.0, 1.0, 1.0, 1.0}; -- Lighter Red for Say
         elseif msgType == 1 then
             chatType = "Shout";
             color = {1.0, 0.5, 0.5, 1.0}; -- Lighter Red for Shout
         elseif msgType == 8 then
             chatType = "Emote";
-            color = {1.0, 1.0, 1.0, 1.0}; -- White
+            color = {1.0, 0.6, 0.6, 1.0}; -- White
         elseif msgType == 14 or msgType == 29 then
             chatType = "System";
             color = {0.0, 0.0, 0.8, 1.0}; -- Dark Blue
